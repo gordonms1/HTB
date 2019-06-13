@@ -291,7 +291,7 @@ ls
 # View the output
 pass.txt and root.txt and cat them both to see what is in the file
 
-*** I am ending the write up here at 27min and 43s. If you would like to learn houw to use Ghidra please continue from that point. ***
+*** I am ending the write up here at 27min and 43s. If you would like to learn how to use Ghidra please continue from that point. ***
 https://youtu.be/OGFTM_qvtVI?t=1663
 
 
